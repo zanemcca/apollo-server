@@ -721,6 +721,7 @@ export async function processGraphQLRequest<TContext>(
           initializers.push(
             dataSource.initialize({
               context,
+              logger,
               cache: requestContext.cache,
             })
           );

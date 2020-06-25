@@ -10,7 +10,7 @@ import {
   fetch,
 } from 'apollo-server-env';
 
-import { ValueOrPromise } from 'apollo-server-types';
+import { ValueOrPromise, Logger } from 'apollo-server-types';
 
 import { DataSource, DataSourceConfig } from 'apollo-datasource';
 
@@ -48,6 +48,7 @@ export abstract class RESTDataSource<TContext = any> extends DataSource {
   httpCache!: HTTPCache;
   context!: TContext;
   memoizedResults = new Map<string, Promise<any>>();
+  logger!: Logger;
 
   constructor(private httpFetch?: typeof fetch) {
     super();
@@ -55,6 +56,7 @@ export abstract class RESTDataSource<TContext = any> extends DataSource {
 
   initialize(config: DataSourceConfig<TContext>): void {
     this.context = config.context;
+    this.logger = config.logger || console;
     this.httpCache = new HTTPCache(config.cache, this.httpFetch);
   }
 
@@ -289,7 +291,7 @@ export abstract class RESTDataSource<TContext = any> extends DataSource {
         return await fn();
       } finally {
         const duration = Date.now() - startTime;
-        console.log(`${label} (${duration}ms)`);
+        this.logger.debug(`${label} (${duration}ms)`);
       }
     } else {
       return fn();
