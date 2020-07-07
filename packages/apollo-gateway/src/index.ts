@@ -43,6 +43,8 @@ import fetcher from 'make-fetch-happen';
 import { HttpRequestCache } from './cache';
 import { fetch } from 'apollo-server-env';
 
+import { getQueryPlan } from 'wasm-bridge';
+
 export type ServiceEndpointDefinition = Pick<ServiceDefinition, 'name' | 'url'>;
 
 interface GatewayConfigBase {
@@ -222,6 +224,8 @@ export class ApolloGateway implements GraphQLService {
   private experimental_approximateQueryPlanStoreMiB?: number;
 
   constructor(config?: GatewayConfig) {
+    console.log(JSON.stringify(getQueryPlan()))
+
     this.config = {
       // TODO: expose the query plan in a more flexible JSON format in the future
       // and remove this config option in favor of `exposeQueryPlan`. Playground
