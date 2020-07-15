@@ -1,5 +1,6 @@
 import { ApolloServer } from "apollo-server";
 import { ApolloGateway, RemoteGraphQLDataSource, GatewayConfig } from "@apollo/gateway";
+import { LocalOverrideGateway } from "./localApolloGateway";
 import DepthLimitingPlugin from "./plugins/ApolloServerPluginDepthLimiting";
 import StrictOperationsPlugin from "./plugins/ApolloServerPluginStrictOperations";
 import ReportForbiddenOperationsPlugin from "./plugins/ApolloServerPluginReportForbiddenOperation";
@@ -53,7 +54,7 @@ const apolloOperationRegistryPlugin = apolloKey ? require("apollo-server-plugin-
   }
 }) : {};
 
-const gateway = new ApolloGateway(gatewayOptions);
+const gateway: ApolloGateway = isProd ? new ApolloGateway(gatewayOptions) : new LocalOverrideGateway(gatewayOptions);
 const server = new ApolloServer({
   gateway,
   subscriptions: false, // Must be disabled with the gateway; see above.
