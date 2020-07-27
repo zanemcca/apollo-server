@@ -3,6 +3,7 @@ import { parse } from 'graphql';
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import { Headers } from "apollo-server-env";
+import { ServiceDefinition } from "@apollo/federation";
 
 let shouldOverrideServices = process.env.APOLLO_SERVICE_OVERRIDE;
 let serviceOverrides = shouldOverrideServices ? setupServiceOverrides() : [];
@@ -19,55 +20,77 @@ function setupServiceOverrides() {
     return overrides;
 }
 
-async function overrideManagedServiceWithLocal(compositionResult, serviceNameToOverride: string, serviceURLOverride: string) {
-    let serviceIndexToOverride = compositionResult.serviceDefinitions.findIndex(sd => sd.name == serviceNameToOverride) || -1;
-    if (serviceURLOverride == undefined || serviceURLOverride == "") {
-        console.log(`You must provide a URL to override the ${serviceNameToOverride} service. Either set the APOLLO_SERVICE_OVERRIDE_URL to your local running server or ensure the url is set in your local config file`);
-    } else if (compositionResult.serviceDefinitions) {
-        const request = {
-            query: 'query __ApolloGetServiceDefinition__ { _service { sdl } }',
-            http: {
-                url: serviceURLOverride,
-                method: 'POST',
-                headers: new Headers()
-            },
-        };
-
-        let source = new RemoteGraphQLDataSource({ url: serviceURLOverride, });
-
-        let { data, errors } = await source.process({ request, context: {} });
-        if (data && !errors) {
-            const typeDefs = parse(data._service.sdl);
-
-            if (serviceIndexToOverride >= 0 && data) {
-                //Service should be overriden in serviceDefinitions
-                compositionResult.serviceDefinitions[serviceIndexToOverride].url = serviceURLOverride;
-                compositionResult.serviceDefinitions[serviceIndexToOverride].typeDefs = typeDefs;
-            } else if (data) {
-                //Service should be added to serviceDefinitions
-                compositionResult.serviceDefinitions.push({ name: serviceNameToOverride, typeDefs, url: serviceURLOverride });
-            }
-        } else if (errors) {
-            errors.map(error => console.log(error));
-        }
-    }
-}
-
 export class LocalOverrideGateway extends ApolloGateway {
     protected async loadServiceDefinitions(config: GatewayConfig): ReturnType<Experimental_UpdateServiceDefinitions> {
         if (serviceOverrides) {
-            let serviceDefinitions = await super.loadServiceDefinitions(config);
-
-            if (serviceDefinitions.isNewSchema) {
-                let serviceOverrideFetchPromises: Array<Promise<void>> = [];
-                serviceOverrides.map(serviceToOverride => serviceOverrideFetchPromises.push(overrideManagedServiceWithLocal(serviceDefinitions, serviceToOverride.name, serviceToOverride.url)));
-
-                await Promise.all(serviceOverrideFetchPromises);
+            let newDefinitions: Array<ServiceDefinition> = [];
+            let fetchedServiceDefinitions;
+            try {
+                fetchedServiceDefinitions = await super.loadServiceDefinitions(config);
+            } catch (err) {
+                //Valid configuration doesn't exist yet
             }
 
-            return serviceDefinitions;
+            for (var i = 0; i < serviceOverrides.length; i++) {
+                let name = serviceOverrides[i].name;
+                let url = serviceOverrides[i].url;
+                let typeDefs = await this.getRemoteTypeDefs(url);
+                if (typeDefs)
+                    newDefinitions.push({ name, url, typeDefs });
+                else
+                    console.log(`Unable to fetch schema from local service ${name} from ${url}`);
+            }
+
+            if (fetchedServiceDefinitions?.serviceDefinitions)
+                for (var i = 0; i < fetchedServiceDefinitions.serviceDefinitions.length; i++) {
+                    let originalService = fetchedServiceDefinitions.serviceDefinitions[i];
+                    let alreadyDefined = fetchedServiceDefinitions.serviceDefinitions.findIndex(sd => sd.name == serviceOverrides[0].name) >= 0 ? true : false;
+                    if (!alreadyDefined)
+                        newDefinitions.push(originalService);
+                }
+
+            return {
+                isNewSchema: true,
+                compositionMetadata: fetchedServiceDefinitions?.compositionMetadata,
+                serviceDefinitions: newDefinitions
+            };
         } else {
             return super.loadServiceDefinitions(config);
         }
+    }
+
+    async getRemoteTypeDefs(serviceURLOverride: string) {
+        try {
+            const request = {
+                query: 'query __ApolloGetServiceDefinition__ { _service { sdl } }',
+                http: {
+                    url: serviceURLOverride,
+                    method: 'POST',
+                    headers: new Headers()
+                },
+            };
+
+            let source = new RemoteGraphQLDataSource({ url: serviceURLOverride, });
+
+            let { data, errors } = await source.process({ request, context: {} });
+            if (data && !errors) {
+                const typeDefs = parse(data._service.sdl);
+
+                return typeDefs;
+            } else if (errors) {
+                errors.map(error => console.log(error));
+            }
+        } catch (err) {
+            switch (err.code) {
+                case "ECONNREFUSED":
+                    console.log(`Request to ${serviceURLOverride} failed. Make sure your local server is running`);
+                    break;
+                default:
+                    console.log(err);
+                    break;
+            }
+        }
+
+        return;
     }
 }
