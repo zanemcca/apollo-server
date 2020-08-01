@@ -404,13 +404,6 @@ export interface AddTraceArgs {
   document?: DocumentNode;
   logger: Logger;
 }
-
-interface TraceCacheKey {
-  statsReportKey: string;
-  statsBucket: number;
-  endsAtMinute: number;
-}
-
 const serviceHeaderDefaults = {
   hostname: os.hostname(),
   agentVersion: `apollo-engine-reporting@${require('../package.json').version}`,
@@ -447,11 +440,7 @@ class StatsMap {
   >();
 
   public toArray(): IContextualizedStats[] {
-    const statsWithContext = new Array<IContextualizedStats>();
-    for (const statWithContext of this.map.values()) {
-      statsWithContext.push(statWithContext);
-    }
-    return statsWithContext;
+    return Array.from(this.map.values());
   }
 
   public addTrace(trace: Trace) {
@@ -681,9 +670,7 @@ export class EngineReportingAgent<TContext = any> {
     if (!report.tracesPerQuery.hasOwnProperty(statsReportKey)) {
       report.tracesPerQuery[statsReportKey] = new TracesAndStats();
       (report.tracesPerQuery[statsReportKey] as any).encodedTraces = [];
-      (report.tracesPerQuery[
-        statsReportKey
-      ] as any).statsWithContext = new StatsMap();
+      report.tracesPerQuery[statsReportKey].statsWithContext = new StatsMap();
     }
 
     const traceCacheKey = JSON.stringify({
