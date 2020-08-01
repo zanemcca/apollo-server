@@ -7,12 +7,12 @@ import {
   printSchema,
 } from 'graphql';
 import {
+  IContextualizedStats,
+  IStatsContext,
+  Report,
   ReportHeader,
   Trace,
-  Report,
   TracesAndStats,
-  IStatsContext,
-  IContextualizedStats,
 } from 'apollo-engine-reporting-protobuf';
 
 import { fetch, RequestAgent, Response } from 'apollo-server-env';
@@ -434,13 +434,14 @@ class ReportData {
 }
 
 class StatsMap {
-  readonly map: Map<IStatsContext, ContextualizedStats> = new Map<
-    IStatsContext,
-    ContextualizedStats
-  >();
+  readonly map: { [k: string]: ContextualizedStats } = Object.create(null);
 
+  /**
+   * This function is used by the protobuf generator to convert this map into
+   * an array of contextualized stats to serialize
+   */
   public toArray(): IContextualizedStats[] {
-    return Array.from(this.map.values());
+    return Object.values(this.map);
   }
 
   public addTrace(trace: Trace) {
@@ -450,17 +451,13 @@ class StatsMap {
       clientReferenceId: trace.clientReferenceId,
     };
 
+    const statsContextKey = JSON.stringify(statsContext);
+
     // TODO: Update sizing
-    let contextualizedStats: ContextualizedStats | undefined = this.map.get(
-      statsContext,
-    );
-
-    if (!contextualizedStats) {
-      contextualizedStats = new ContextualizedStats(statsContext);
-      this.map.set(statsContext, contextualizedStats);
-    }
-
-    contextualizedStats.addTrace(trace);
+    (
+      this.map[statsContextKey] ||
+      (this.map[statsContextKey] = new ContextualizedStats(statsContext))
+    ).addTrace(trace);
   }
 }
 
@@ -683,9 +680,7 @@ export class EngineReportingAgent<TContext = any> {
     const convertTraceToStats = reportData.traceCache[traceCacheKey];
 
     if (convertTraceToStats) {
-      (report.tracesPerQuery[statsReportKey] as any).statsWithContext.addTrace(
-        trace,
-      );
+      (report.tracesPerQuery[statsReportKey].statsWithContext as StatsMap).addTrace(trace);
     } else {
       const protobufError = Trace.verify(trace);
       if (protobufError) {
