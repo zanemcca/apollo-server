@@ -53,6 +53,143 @@ const queryReport = `
       aBoolean
     }
 `;
+describe("Operation", () => {
+  const schema = makeExecutableSchema({ typeDefs });
+  addMockFunctionsToSchema({ schema });
+
+  const addTrace = jest.fn(() => Promise.resolve());
+  const startSchemaReporting = jest.fn();
+  const executableSchemaIdGenerator = jest.fn(computeExecutableSchemaId);
+  const pluginInstance = plugin(
+    {},
+    addTrace,
+    {
+      startSchemaReporting,
+      executableSchemaIdGenerator,
+      schemaReport: false
+    }
+  );
+
+
+  beforeEach(() => {
+    addTrace.mockClear();
+    startSchemaReporting.mockClear();
+    executableSchemaIdGenerator.mockClear();
+  });
+
+  it("fails parse for invalid gql", async () => {
+    await pluginTestHarness({
+      pluginInstance,
+      schema,
+      graphqlRequest: {
+        query: "random text",
+        operationName: "r",
+        extensions: {
+          clientName: "testing suite"
+        },
+        http: new Request("http://localhost:123/foo")
+      },
+      executor: async ({ request: { query: source } }) => {
+        return await graphql({
+          schema,
+          source
+        });
+      }
+    });
+
+    expect(addTrace).toBeCalledTimes(1);
+    expect(addTrace).toBeCalledWith(expect.objectContaining({
+        document: undefined,
+        graphqlValidationFailure: true,
+        graphqlUnknownOperationName: true,
+      })
+    );
+  });
+
+  it("validation fails for invalid operation", async () => {
+    await pluginTestHarness({
+      pluginInstance,
+      schema,
+      graphqlRequest: {
+        query: "query test { a }",
+        operationName: "r",
+        extensions: {
+          clientName: "testing suite"
+        },
+        http: new Request("http://localhost:123/foo")
+      },
+      executor: async ({ request: { query: source } }) => {
+        return await graphql({
+          schema,
+          source
+        });
+      }
+    });
+
+    expect(addTrace).toBeCalledTimes(1);
+    expect(addTrace).toBeCalledWith(expect.objectContaining({
+        graphqlValidationFailure: true,
+        graphqlUnknownOperationName: true
+      })
+    );
+  });
+
+  it("is unknown for missing operation", async () => {
+    await pluginTestHarness({
+      pluginInstance,
+      schema,
+      graphqlRequest: {
+        query,
+        operationName: "r",
+        extensions: {
+          clientName: "testing suite"
+        },
+        http: new Request("http://localhost:123/foo")
+      },
+      executor: async ({ request: { query: source } }) => {
+        return await graphql({
+          schema,
+          source
+        });
+      }
+    });
+
+    expect(addTrace).toBeCalledTimes(1);
+    expect(addTrace).toBeCalledWith(expect.objectContaining({
+        graphqlValidationFailure: false,
+        graphqlUnknownOperationName: true
+      })
+    );
+  });
+
+  it("validates for safe operation", async () => {
+    await pluginTestHarness({
+      pluginInstance,
+      schema,
+      graphqlRequest: {
+        query,
+        operationName: "q",
+        extensions: {
+          clientName: "testing suite"
+        },
+        http: new Request("http://localhost:123/foo")
+      },
+      executor: async ({ request: { query: source } }) => {
+        return await graphql({
+          schema,
+          source
+        });
+      }
+    });
+
+    expect(addTrace).toBeCalledTimes(1);
+    expect(addTrace).toBeCalledWith(expect.objectContaining({
+        graphqlValidationFailure: false,
+        graphqlUnknownOperationName: false
+      })
+    );
+  });
+});
 
 describe('schema reporting', () => {
   const schema = makeExecutableSchema({ typeDefs });
@@ -238,19 +375,6 @@ it('trace construction', async () => {
   });
 
   // XXX actually write some tests
-
-  expect(traces.length).toBe(1);
-  const trace = traces[0] as any;
-  expect(trace.schemaHash).toBe("schema-hash");
-  expect(trace.trace.root.child.length).toBe(2);
-
-  const nodeForBoolean = trace.trace.root.child.find( (node: any) => {return node.responseName === 'aBoolean';});
-  expect(nodeForBoolean).toBeTruthy();
-  expect(nodeForBoolean).toMatchObject({
-    responseName: "aBoolean",
-    type: "Boolean",
-    parentType: "Query"
-  });
 });
 
 /**

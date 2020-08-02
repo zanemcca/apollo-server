@@ -1,26 +1,31 @@
 import {
-  WithRequired,
   GraphQLRequest,
-  GraphQLRequestContextExecutionDidStart,
-  GraphQLResponse,
-  ValueOrPromise,
-  GraphQLRequestContextWillSendResponse,
   GraphQLRequestContext,
+  GraphQLRequestContextDidEncounterErrors,
+  GraphQLRequestContextDidResolveSource,
+  GraphQLRequestContextExecutionDidStart,
+  GraphQLRequestContextParsingDidStart,
+  GraphQLRequestContextValidationDidStart,
+  GraphQLRequestContextWillSendResponse,
+  GraphQLResponse,
   Logger,
-} from 'apollo-server-types';
-import { GraphQLSchema, GraphQLObjectType, GraphQLString } from 'graphql/type';
-import { CacheHint } from 'apollo-cache-control';
+  ValueOrPromise,
+  WithRequired
+} from "apollo-server-types";
+import { GraphQLObjectType, GraphQLSchema, GraphQLString } from "graphql/type";
+import { CacheHint } from "apollo-cache-control";
 import {
   enablePluginsForSchemaResolvers,
-  symbolExecutionDispatcherWillResolveField,
-} from './schemaInstrumentation';
+  symbolExecutionDispatcherWillResolveField
+} from "./schemaInstrumentation";
 import {
   ApolloServerPlugin,
-  GraphQLRequestExecutionListener,
-} from 'apollo-server-plugin-base';
-import { InMemoryLRUCache } from 'apollo-server-caching';
-import { Dispatcher } from './dispatcher';
+  GraphQLRequestExecutionListener
+} from "apollo-server-plugin-base";
+import { InMemoryLRUCache } from "apollo-server-caching";
+import { Dispatcher } from "./dispatcher";
 import { generateSchemaHash } from "./schemaHash";
+import { getOperationAST, parse, validate as graphqlValidate } from "graphql";
 
 // This test harness guarantees the presence of `query`.
 type IPluginTestHarnessGraphqlRequest = WithRequired<GraphQLRequest, 'query'>;
@@ -107,8 +112,9 @@ export default async function pluginTestHarness<TContext>({
     });
   }
 
+  type Mutable<T> = { -readonly [P in keyof T]: T[P] };
 
-  const requestContext: GraphQLRequestContext<TContext> = {
+  const requestContext: Mutable<GraphQLRequestContext<TContext>> = {
     logger: logger || console,
     schema,
     schemaHash: generateSchemaHash(schema),
@@ -118,6 +124,10 @@ export default async function pluginTestHarness<TContext>({
     cache: new InMemoryLRUCache(),
     context,
   };
+
+  if (requestContext.source === undefined) {
+    throw new Error("No source provided for test");
+  }
 
   requestContext.overallCachePolicy = overallCachePolicy;
 
@@ -131,8 +141,72 @@ export default async function pluginTestHarness<TContext>({
 
   const executionListeners: GraphQLRequestExecutionListener<TContext>[] = [];
 
-  // This logic is duplicated in the request pipeline right now.
+  // Let the plugins know that we now have a STRING of what we hope will
+  // parse and validate into a document we can execute on.  Unless we have
+  // retrieved this from our APQ cache, there's no guarantee that it is
+  // syntactically correct, so this string should not be trusted as a valid
+  // document until after it's parsed and validated.
   await dispatcher.invokeHookAsync(
+    'didResolveSource',
+    requestContext as GraphQLRequestContextDidResolveSource<TContext>,
+  );
+
+  if (!requestContext.document) {
+    await dispatcher.invokeDidStartHook(
+      'parsingDidStart',
+      requestContext as GraphQLRequestContextParsingDidStart<TContext>,
+    );
+
+    try {
+      requestContext.document = parse(requestContext.source, undefined);
+    } catch (syntaxError) {
+      const errorOrErrors = syntaxError
+      requestContext.errors = Array.isArray(errorOrErrors)
+        ? errorOrErrors
+        : [errorOrErrors];
+      await dispatcher.invokeHookAsync(
+        'didEncounterErrors',
+        requestContext as GraphQLRequestContextDidEncounterErrors<TContext>,
+      );
+
+      return requestContext as GraphQLRequestContextWillSendResponse<TContext>;
+    }
+
+    await dispatcher.invokeDidStartHook(
+      'validationDidStart',
+      requestContext as GraphQLRequestContextValidationDidStart<TContext>,
+    );
+
+    /**
+     * We are validating only with the default rules.
+     */
+    const validationErrors = graphqlValidate(requestContext.schema, requestContext.document);
+
+    if (validationErrors.length !== 0) {
+      requestContext.errors = validationErrors;
+      await dispatcher.invokeHookAsync(
+        'didEncounterErrors',
+        requestContext as GraphQLRequestContextDidEncounterErrors<TContext>,
+      );
+      return requestContext as GraphQLRequestContextWillSendResponse<TContext>;
+    }
+  }
+
+  const operation = getOperationAST(
+    requestContext.document,
+    requestContext.request.operationName,
+  );
+
+  requestContext.operation = operation || undefined;
+  // We'll set `operationName` to `null` for anonymous operations.  Note that
+  // apollo-engine-reporting relies on the fact that the requestContext passed
+  // to requestDidStart is mutated to add this field before requestDidEnd is
+  // called
+  requestContext.operationName =
+    (operation && operation.name && operation.name.value) || null;
+
+  // This logic is duplicated in the request pipeline right now.
+  dispatcher.invokeHookAsync(
     'didResolveOperation',
     requestContext as GraphQLRequestContextExecutionDidStart<TContext>,
   );
