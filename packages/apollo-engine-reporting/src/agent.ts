@@ -635,18 +635,14 @@ export class EngineReportingAgent<TContext = any> {
     }
 
     let statsReportKey: string;
-    // It's important to check parse failure first, since parse failures always
-    // indicate validation failure
-    if (graphqlUnknownOperationName) {
-      statsReportKey = `## GraphQLUnknownOperationName`;
-      if (
-        this.options.sendOperationDocumentsOnUnexecutableOperation &&
-        source
-      ) {
-        trace.unexecutedOperationBody = source;
-        trace.unexecutedOperationName = operationName;
-      }
-    } else if (!document) {
+    /*
+     * Go in reverse order or failures.
+     * If the graphql document has an unknown operation it must have been parsed
+     * and validated.
+     * If a graphql document fails to validate it must have already been parsed.
+     * If there is no graphql document then it can't do any of the subsequent things.
+     */
+    if (!document) {
       statsReportKey = `## GraphQLParseFailure`;
       if (
         this.options.sendOperationDocumentsOnUnexecutableOperation &&
@@ -662,6 +658,15 @@ export class EngineReportingAgent<TContext = any> {
         source
       ) {
         trace.unexecutedOperationName = source;
+        trace.unexecutedOperationName = operationName;
+      }
+    } else if (graphqlUnknownOperationName) {
+      statsReportKey = `## GraphQLUnknownOperationName`;
+      if (
+        this.options.sendOperationDocumentsOnUnexecutableOperation &&
+        source
+      ) {
+        trace.unexecutedOperationBody = source;
         trace.unexecutedOperationName = operationName;
       }
     } else {
