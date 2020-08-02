@@ -1,24 +1,22 @@
 import { GraphQLSchema, GraphQLError, getIntrospectionQuery } from 'graphql';
-import path from 'path';
 import {
-  GraphQLSchemaValidationError,
-  GraphQLSchemaModule,
   addResolversToSchema,
   GraphQLResolverMap,
 } from 'apollo-graphql';
 import gql from 'graphql-tag';
 import { GraphQLRequestContext } from 'apollo-server-types';
 import { AuthenticationError } from 'apollo-server-core';
-import { composeServices, buildFederatedSchema } from '@apollo/federation';
 
 import { buildQueryPlan, buildOperationContext } from '../buildQueryPlan';
 import { executeQueryPlan } from '../executeQueryPlan';
 import { LocalGraphQLDataSource } from '../datasources/LocalGraphQLDataSource';
 
-function buildLocalService(modules: GraphQLSchemaModule[]) {
-  const schema = buildFederatedSchema(modules);
-  return new LocalGraphQLDataSource(schema);
-}
+import { astSerializer, queryPlanSerializer } from '../snapshotSerializers';
+import { getFederatedTestingSchema, buildLocalService } from './execution-utils';
+import { fixtures } from 'apollo-federation-integration-testsuite';
+
+expect.addSnapshotSerializer(astSerializer);
+expect.addSnapshotSerializer(queryPlanSerializer);
 
 describe('executeQueryPlan', () => {
   let serviceMap: {
@@ -33,36 +31,11 @@ describe('executeQueryPlan', () => {
   }
 
   let schema: GraphQLSchema;
+  let errors: GraphQLError[];
 
   beforeEach(() => {
-    serviceMap = Object.fromEntries(
-      ['accounts', 'product', 'inventory', 'reviews', 'books'].map(
-        serviceName => {
-          return [
-            serviceName,
-            buildLocalService([
-              require(path.join(
-                __dirname,
-                '__fixtures__/schemas',
-                serviceName,
-              )),
-            ]),
-          ] as [string, LocalGraphQLDataSource];
-        },
-      ),
-    );
-
-    let errors: GraphQLError[];
-    ({ schema, errors } = composeServices(
-      Object.entries(serviceMap).map(([serviceName, service]) => ({
-        name: serviceName,
-        typeDefs: service.sdl(),
-      })),
-    ));
-
-    if (errors && errors.length > 0) {
-      throw new GraphQLSchemaValidationError(errors);
-    }
+    ({ serviceMap, schema, errors } = getFederatedTestingSchema());
+    expect(errors).toHaveLength(0);
   });
 
   function buildRequestContext(): GraphQLRequestContext {
@@ -100,7 +73,7 @@ describe('executeQueryPlan', () => {
 
     it(`should include an error when a root-level field errors out`, async () => {
       overrideResolversInService('accounts', {
-        Query: {
+        RootQuery: {
           me() {
             throw new AuthenticationError('Something went wrong');
           },
@@ -140,14 +113,14 @@ describe('executeQueryPlan', () => {
       );
       expect(response).toHaveProperty(
         'errors.0.extensions.query',
-        '{\n  me {\n    name\n  }\n}',
+        '{me{name}}',
       );
       expect(response).toHaveProperty('errors.0.extensions.variables', {});
     });
 
     it(`should still include other root-level results if one root-level field errors out`, async () => {
       overrideResolversInService('accounts', {
-        Query: {
+        RootQuery: {
           me() {
             throw new Error('Something went wrong');
           },
@@ -432,6 +405,119 @@ describe('executeQueryPlan', () => {
 
     expect(response.data).toHaveProperty('__schema');
     expect(response.errors).toBeUndefined();
+  });
+
+  it(`can execute queries on interface types`, async () => {
+    const query = gql`
+      query {
+        vehicle(id: "1") {
+          description
+          price
+          retailPrice
+        }
+      }
+    `;
+
+    const operationContext = buildOperationContext(schema, query);
+    const queryPlan = buildQueryPlan(operationContext);
+
+    const response = await executeQueryPlan(
+      queryPlan,
+      serviceMap,
+      buildRequestContext(),
+      operationContext,
+    );
+
+    expect(response.data).toMatchInlineSnapshot(`
+      Object {
+        "vehicle": Object {
+          "description": "Humble Toyota",
+          "price": "9990",
+          "retailPrice": "9990",
+        },
+      }
+    `);
+  });
+
+  it(`can execute queries whose fields are interface types`, async () => {
+    const query = gql`
+      query {
+        user(id: "1") {
+          name
+          vehicle {
+            description
+            price
+            retailPrice
+          }
+        }
+      }
+    `;
+
+    const operationContext = buildOperationContext(schema, query);
+    const queryPlan = buildQueryPlan(operationContext);
+
+    const response = await executeQueryPlan(
+      queryPlan,
+      serviceMap,
+      buildRequestContext(),
+      operationContext,
+    );
+
+    expect(response.data).toMatchInlineSnapshot(`
+      Object {
+        "user": Object {
+          "name": "Ada Lovelace",
+          "vehicle": Object {
+            "description": "Humble Toyota",
+            "price": "9990",
+            "retailPrice": "9990",
+          },
+        },
+      }
+    `);
+  });
+
+  it(`can execute queries whose fields are union types`, async () => {
+    const query = gql`
+      query {
+        user(id: "1") {
+          name
+          thing {
+            ... on Vehicle {
+              description
+              price
+              retailPrice
+            }
+            ... on Ikea {
+              asile
+            }
+          }
+        }
+      }
+    `;
+
+    const operationContext = buildOperationContext(schema, query);
+    const queryPlan = buildQueryPlan(operationContext);
+
+    const response = await executeQueryPlan(
+      queryPlan,
+      serviceMap,
+      buildRequestContext(),
+      operationContext,
+    );
+
+    expect(response.data).toMatchInlineSnapshot(`
+      Object {
+        "user": Object {
+          "name": "Ada Lovelace",
+          "thing": Object {
+            "description": "Humble Toyota",
+            "price": "9990",
+            "retailPrice": "9990",
+          },
+        },
+      }
+    `);
   });
 
   it('can execute queries with falsey @requires (except undefined)', async () => {
