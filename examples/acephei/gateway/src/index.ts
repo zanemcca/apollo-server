@@ -32,7 +32,7 @@ if (!apolloKey) {
       { name: "products", url: "http://localhost:4003" },
       { name: "reviews", url: "http://localhost:4002" }
     ],
-    debug: isProd ? false : true,
+    debug: false,// isProd ? false : true,
     buildService({ url }) {
       return new AuthenticatedDataSource({ url });
     }
@@ -80,7 +80,27 @@ const server = new ApolloServer({
     return { userID };
   },
   plugins: [
-    OperationCostPlugin({ debug: true, maxCost: 1500, dataFrom: "-604800", durationMsPercentile: 1.0 }),
+    OperationCostPlugin({
+      debug: true,
+      maxCost: 1500,
+      dataFrom: "-604800",
+      durationMsPercentile: 1.0,
+      costMapping: {
+        "Query.products": (key, node, costMapping) => {
+          const studioCost = costMapping[`${key}-apollo`];
+          let firstArgument = node.arguments?.filter(a => a.name.value == "first");
+          if (firstArgument.length == 0) {
+            //Capturing the default number - 10 in this example
+            return studioCost;
+          } else {
+            let numberOfProducts = Number.parseInt(firstArgument[0].value.value);
+            let percentMultiplier = numberOfProducts / 10;
+
+            return studioCost * percentMultiplier;
+          }
+        }
+      }
+    }),
     DepthLimitingPlugin({ maxDepth: 10 }),
     StrictOperationsPlugin(),
     ReportForbiddenOperationsPlugin({ debug: true }),

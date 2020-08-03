@@ -32,10 +32,6 @@ const AllGraphOperationsQuery = `#graphql
         }
     }`;
 
-function isFunction(functionToCheck) {
-    return functionToCheck && {}.toString.call(functionToCheck) === '[object Function]';
-   }
-
 export default function OperationCostPlugin(options: Options = Object.create(null), cache: InMemoryLRUCache = new InMemoryLRUCache()) {
     let costMapping = options.costMapping || {};
     let maxCost = options.maxCost || 0;
@@ -81,10 +77,10 @@ export default function OperationCostPlugin(options: Options = Object.create(nul
 
                 results?.data?.service?.stats?.fieldStats?.map(fieldStat => {
                     let fieldName = fieldStat.groupBy.field.split(':')[0];
-                    if(costMapping[fieldName])
-                    costMapping[`${fieldName}-apollo`] = fieldStat.metrics.fieldHistogram.durationMs;
+                    if (costMapping[fieldName])
+                        costMapping[`${fieldName}-apollo`] = fieldStat.metrics.fieldHistogram.durationMs;
                     else
-                    costMapping[fieldName] = fieldStat.metrics.fieldHistogram.durationMs;
+                        costMapping[fieldName] = fieldStat.metrics.fieldHistogram.durationMs;
                 })
             } catch (err) {
                 //We don't want to throw an error if we are unable to fetch a cost mapping due to Apollo API not being up
@@ -129,12 +125,12 @@ export default function OperationCostPlugin(options: Options = Object.create(nul
 
                                     //Support having a field provided as a function during initialization
                                     //The function should return a number that is the cost based on the given node and field cost from studio
-                                    if({}.toString.call(nodeCost) === '[object Function]')
-                                        nodeCost = nodeCost(costMapping[`${costKey}-apollo`],node);
+                                    if ({}.toString.call(nodeCost) === '[object Function]')
+                                        costToAdd = nodeCost(costKey, node, costMapping);
 
-                                    //We don't want any cost estimates from the root since we calculate based on th individual fields
+                                    //We don't want any cost estimates from the root (unless function is provided) since we calculate based on th individual fields
                                     //If it is a standard type, that will be the cost value used
-                                    if (parentType.name == `Query` || parentType.name == `Mutation`) {
+                                    else if (parentType.name == `Query` || parentType.name == `Mutation`) {
                                         if (isSpecifiedScalarType(parentType)) {
                                             //It's a standard type, there won't be any other fields to visit and we want to return that cost
                                             logger.debug(`${costKey}: ${nodeCost}`);
