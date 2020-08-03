@@ -2,6 +2,7 @@ import { ApolloServer } from "apollo-server";
 import { ApolloGateway, RemoteGraphQLDataSource, GatewayConfig } from "@apollo/gateway";
 import DepthLimitingPlugin from "./plugins/ApolloServerPluginDepthLimiting";
 import StrictOperationsPlugin from "./plugins/ApolloServerPluginStrictOperations";
+import OperationCostPlugin from './plugins/ApolloServerPluginOperationCost'
 import ReportForbiddenOperationsPlugin from "./plugins/ApolloServerPluginReportForbiddenOperation";
 
 const isProd = process.env.NODE_ENV === "production";
@@ -79,6 +80,7 @@ const server = new ApolloServer({
     return { userID };
   },
   plugins: [
+    OperationCostPlugin({ debug: true, maxCost: 1500, dataFrom: "-604800", durationMsPercentile: 1.0 }),
     DepthLimitingPlugin({ maxDepth: 10 }),
     StrictOperationsPlugin(),
     ReportForbiddenOperationsPlugin({ debug: true }),
