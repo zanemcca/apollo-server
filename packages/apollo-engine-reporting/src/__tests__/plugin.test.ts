@@ -53,23 +53,18 @@ const queryReport = `
       aBoolean
     }
 `;
-describe("Operation", () => {
+describe('Operation', () => {
   const schema = makeExecutableSchema({ typeDefs });
   addMockFunctionsToSchema({ schema });
 
   const addTrace = jest.fn(() => Promise.resolve());
   const startSchemaReporting = jest.fn();
   const executableSchemaIdGenerator = jest.fn(computeExecutableSchemaId);
-  const pluginInstance = plugin(
-    {},
-    addTrace,
-    {
-      startSchemaReporting,
-      executableSchemaIdGenerator,
-      schemaReport: false
-    }
-  );
-
+  const pluginInstance = plugin({}, addTrace, {
+    startSchemaReporting,
+    executableSchemaIdGenerator,
+    schemaReport: false,
+  });
 
   beforeEach(() => {
     addTrace.mockClear();
@@ -77,116 +72,120 @@ describe("Operation", () => {
     executableSchemaIdGenerator.mockClear();
   });
 
-  it("fails parse for invalid gql", async () => {
+  it('fails parse for invalid gql', async () => {
     await pluginTestHarness({
       pluginInstance,
       schema,
       graphqlRequest: {
-        query: "random text",
-        operationName: "r",
+        query: 'random text',
+        operationName: 'r',
         extensions: {
-          clientName: "testing suite"
+          clientName: 'testing suite',
         },
-        http: new Request("http://localhost:123/foo")
+        http: new Request('http://localhost:123/foo'),
       },
       executor: async ({ request: { query: source } }) => {
         return await graphql({
           schema,
-          source
+          source,
         });
-      }
+      },
     });
 
     expect(addTrace).toBeCalledTimes(1);
-    expect(addTrace).toBeCalledWith(expect.objectContaining({
+    expect(addTrace).toBeCalledWith(
+      expect.objectContaining({
         document: undefined,
         graphqlValidationFailure: true,
         graphqlUnknownOperationName: true,
-      })
+      }),
     );
   });
 
-  it("validation fails for invalid operation", async () => {
+  it('validation fails for invalid operation', async () => {
     await pluginTestHarness({
       pluginInstance,
       schema,
       graphqlRequest: {
-        query: "query test { a }",
-        operationName: "r",
+        query: 'query test { a }',
+        operationName: 'r',
         extensions: {
-          clientName: "testing suite"
+          clientName: 'testing suite',
         },
-        http: new Request("http://localhost:123/foo")
+        http: new Request('http://localhost:123/foo'),
       },
       executor: async ({ request: { query: source } }) => {
         return await graphql({
           schema,
-          source
+          source,
         });
-      }
+      },
     });
 
     expect(addTrace).toBeCalledTimes(1);
-    expect(addTrace).toBeCalledWith(expect.objectContaining({
+    expect(addTrace).toBeCalledWith(
+      expect.objectContaining({
         graphqlValidationFailure: true,
-        graphqlUnknownOperationName: true
-      })
+        graphqlUnknownOperationName: true,
+      }),
     );
   });
 
-  it("is unknown for missing operation", async () => {
+  it('is unknown for missing operation', async () => {
     await pluginTestHarness({
       pluginInstance,
       schema,
       graphqlRequest: {
         query,
-        operationName: "r",
+        operationName: 'r',
         extensions: {
-          clientName: "testing suite"
+          clientName: 'testing suite',
         },
-        http: new Request("http://localhost:123/foo")
+        http: new Request('http://localhost:123/foo'),
       },
       executor: async ({ request: { query: source } }) => {
         return await graphql({
           schema,
-          source
+          source,
         });
-      }
+      },
     });
 
     expect(addTrace).toBeCalledTimes(1);
-    expect(addTrace).toBeCalledWith(expect.objectContaining({
+    expect(addTrace).toBeCalledWith(
+      expect.objectContaining({
         graphqlValidationFailure: false,
-        graphqlUnknownOperationName: true
-      })
+        graphqlUnknownOperationName: true,
+      }),
     );
   });
 
-  it("validates for safe operation", async () => {
+  it('validates for safe operation', async () => {
     await pluginTestHarness({
       pluginInstance,
       schema,
       graphqlRequest: {
         query,
-        operationName: "q",
+        operationName: 'q',
         extensions: {
-          clientName: "testing suite"
+          clientName: 'testing suite',
         },
-        http: new Request("http://localhost:123/foo")
+        http: new Request('http://localhost:123/foo'),
       },
       executor: async ({ request: { query: source } }) => {
         return await graphql({
           schema,
-          source
+          source,
         });
-      }
+      },
     });
 
     expect(addTrace).toBeCalledTimes(1);
-    expect(addTrace).toBeCalledWith(expect.objectContaining({
+    expect(addTrace).toBeCalledWith(
+      expect.objectContaining({
         graphqlValidationFailure: false,
-        graphqlUnknownOperationName: false
-      })
+        graphqlUnknownOperationName: false,
+      }),
     );
   });
 });

@@ -639,19 +639,28 @@ export class EngineReportingAgent<TContext = any> {
     // indicate validation failure
     if (graphqlUnknownOperationName) {
       statsReportKey = `## GraphQLUnknownOperationName`;
-      if (this.options.sendOperationDocumentsOnUnexecutableOperation && source) {
+      if (
+        this.options.sendOperationDocumentsOnUnexecutableOperation &&
+        source
+      ) {
         trace.unexecutedOperationBody = source;
         trace.unexecutedOperationName = operationName;
       }
     } else if (!document) {
       statsReportKey = `## GraphQLParseFailure`;
-      if (this.options.sendOperationDocumentsOnUnexecutableOperation && source) {
+      if (
+        this.options.sendOperationDocumentsOnUnexecutableOperation &&
+        source
+      ) {
         trace.unexecutedOperationBody = source;
         trace.unexecutedOperationName = operationName;
       }
     } else if (graphqlValidationFailure) {
       statsReportKey = `## GraphQLValidationFailure`;
-      if (this.options.sendOperationDocumentsOnUnexecutableOperation && source) {
+      if (
+        this.options.sendOperationDocumentsOnUnexecutableOperation &&
+        source
+      ) {
         trace.unexecutedOperationName = source;
         trace.unexecutedOperationName = operationName;
       }
@@ -660,7 +669,7 @@ export class EngineReportingAgent<TContext = any> {
         queryHash,
         operationName,
         document,
-        logger
+        logger,
       });
       statsReportKey = `# ${operationName || '-'}\n${signature}`;
     }
@@ -910,7 +919,6 @@ export class EngineReportingAgent<TContext = any> {
     document: DocumentNode;
     logger: Logger;
   }): Promise<string> {
-
     const cacheKey = signatureCacheKey(queryHash, operationName);
 
     // If we didn't have the signature in the cache, we'll resort to

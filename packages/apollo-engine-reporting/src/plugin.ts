@@ -302,7 +302,7 @@ export const plugin = <TContext>(
            * If operation is undefined then `getOperationAST` returned null and
            * an unknown operation was specified.
            */
-          graphqlUnknownOperationName = (requestContext.operation === undefined);
+          graphqlUnknownOperationName = requestContext.operation === undefined;
           await shouldTraceOperation(requestContext);
 
           if (metrics.captureTraces === false) {
