@@ -164,10 +164,13 @@ export const plugin = <TContext>(
       }
 
       /**
-       *  This is set to true at the beginning of the pipeline. If we resovle
+       *  This is set to true at the beginning of the pipeline. If we resole
        *  the operation then we have a valid graphql operation, so this boolean
-       *  can be set to true. If we end tracing before then the operation did pass
-       *  validation.
+       *  can be set to true. If we end tracing before resolving the operation
+       *  The operation must have failed to validate.
+       *
+       *  If there is no operation found in `didResolveOperation` then an unknown
+       *  operation was passed.
        */
       let graphqlValidationFailure = true;
       let graphqlUnknownOperationName = true;
