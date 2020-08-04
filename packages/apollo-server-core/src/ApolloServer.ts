@@ -62,7 +62,6 @@ import {
 
 import { generateSchemaHash } from './utils/schemaHash';
 import { isDirectiveDefined } from './utils/isDirectiveDefined';
-import createSHA from './utils/createSHA';
 import {
   processGraphQLRequest,
   GraphQLRequestContext,
@@ -73,13 +72,14 @@ import {
 import { Headers } from 'apollo-server-env';
 import { buildServiceDefinition } from '@apollographql/apollo-tools';
 import { plugin as pluginTracing } from "apollo-tracing";
-import { Logger, SchemaHash, ValueOrPromise } from "apollo-server-types";
+import { Logger, SchemaHash, ValueOrPromise, ApolloConfig } from "apollo-server-types";
 import {
   plugin as pluginCacheControl,
   CacheControlExtensionOptions,
 } from 'apollo-cache-control';
-import { getEngineApiKey, getEngineGraphVariant } from "apollo-engine-reporting/dist/agent";
 import { cloneObject } from "./runHttpQuery";
+import { determineApolloConfig } from './determineApolloConfig';
+import { federatedPlugin, EngineReportingAgent } from 'apollo-engine-reporting';
 
 const NoIntrospection = (context: ValidationContext) => ({
   Field(node: FieldDefinitionNode) {
@@ -93,15 +93,6 @@ const NoIntrospection = (context: ValidationContext) => ({
     }
   },
 });
-
-function getEngineServiceId(engine: Config['engine'], logger: Logger): string | undefined {
-  const engineApiKey = getEngineApiKey({engine, skipWarn: true, logger} );
-  if (engineApiKey) {
-    return engineApiKey.split(':', 2)[1];
-  }
-
-  return;
-}
 
 const forbidUploadsForTesting =
   process && process.env.NODE_ENV === 'test' && !runtimeSupportsUploads;
@@ -127,9 +118,8 @@ export class ApolloServerBase {
   public requestOptions: Partial<GraphQLServerOptions<any>> = Object.create(null);
 
   private context?: Context | ContextFunction;
-  private engineReportingAgent?: import('apollo-engine-reporting').EngineReportingAgent;
-  private engineServiceId?: string;
-  private engineApiKeyHash?: string;
+  private engineReportingAgent?: EngineReportingAgent;
+  private apolloConfig: ApolloConfig;
   protected plugins: ApolloServerPlugin[] = [];
 
   protected subscriptionServerOptions?: SubscriptionServerOptions;
@@ -166,7 +156,6 @@ export class ApolloServerBase {
       mocks,
       mockEntireSchema,
       extensions,
-      engine,
       subscriptions,
       uploads,
       playground,
@@ -175,8 +164,19 @@ export class ApolloServerBase {
       cacheControl,
       experimental_approximateDocumentStoreMiB,
       handleSignals,
+      apollo,
+      engine,
       ...requestOptions
     } = config;
+
+    if (engine !== undefined) {
+      // FIXME(no-engine): finish implementing backwards-compatibility `engine`
+      // mode and warn about deprecation
+      if (apollo) {
+        throw new Error("You cannot provide both `engine` and `apollo` to `new ApolloServer()`. " +
+     "For details on how to migrate all of your options out of `engine`, see FIXME(no-engine) URL MISSING");
+      }
+    }
 
     // Setup logging facilities
     if (config.logger) {
@@ -199,6 +199,8 @@ export class ApolloServerBase {
 
       this.logger = loglevelLogger;
     }
+
+    this.apolloConfig = determineApolloConfig(apollo, engine, this.logger);
 
     if (gateway && (modules || schema || typeDefs || resolvers)) {
       throw new Error(
@@ -294,24 +296,17 @@ export class ApolloServerBase {
       }
     }
 
-    // In an effort to avoid over-exposing the API key itself, extract the
-    // service ID from the API key for plugins which only needs service ID.
-    // The truthiness of this value can also be used in other forks of logic
-    // related to Engine, as is the case with EngineReportingAgent just below.
-    this.engineServiceId = getEngineServiceId(engine, this.logger);
-    const apiKey = getEngineApiKey({engine, skipWarn: true, logger: this.logger});
-    if (apiKey) {
-      this.engineApiKeyHash = createSHA('sha512')
-        .update(apiKey)
-        .digest('hex');
-    }
-
-    if (this.engineServiceId) {
-      const { EngineReportingAgent } = require('apollo-engine-reporting');
+    if (this.apolloConfig.key) {
+      // FIXME(no-engine) Eliminate EngineReportingAgent entirely.
       this.engineReportingAgent = new EngineReportingAgent(
         typeof engine === 'object' ? engine : Object.create({
           logger: this.logger,
         }),
+        // This isn't part of EngineReportingOptions because it's generated
+        // internally by ApolloServer, not part of the end-user options... and
+        // hopefully EngineReportingAgent will be eliminated before this code
+        // is shipped anyway.
+        this.apolloConfig,
       );
       // Don't add the extension here (we want to add it later in generateSchemaDerivedData).
     }
@@ -420,7 +415,6 @@ export class ApolloServerBase {
   private initSchema(): GraphQLSchema | Promise<GraphQLSchema> {
     const {
       gateway,
-      engine,
       schema,
       modules,
       typeDefs,
@@ -440,13 +434,13 @@ export class ApolloServerBase {
         ),
       );
 
-      const graphVariant = getEngineGraphVariant(engine, this.logger);
+      // For backwards compatibility with old versions of @apollo/gateway.
       const engineConfig =
-        this.engineApiKeyHash && this.engineServiceId
+        this.apolloConfig.keyHash && this.apolloConfig.graphId
           ? {
-              apiKeyHash: this.engineApiKeyHash,
-              graphId: this.engineServiceId,
-              ...(graphVariant && { graphVariant }),
+              apiKeyHash: this.apolloConfig.keyHash,
+              graphId: this.apolloConfig.graphId,
+              graphVariant: this.apolloConfig.graphVariant,
             }
           : undefined;
 
@@ -456,7 +450,7 @@ export class ApolloServerBase {
       // a federated schema!
       this.requestOptions.executor = gateway.executor;
 
-      return gateway.load({ engine: engineConfig })
+      return gateway.load({ apollo: this.apolloConfig, engine: engineConfig })
         .then(config => config.schema)
         .catch(err => {
           // We intentionally do not re-throw the exact error from the gateway
@@ -592,9 +586,10 @@ export class ApolloServerBase {
       logger: this.logger,
       schema: schema,
       schemaHash: schemaHash,
+      apollo: this.apolloConfig,
       engine: {
-        serviceID: this.engineServiceId,
-        apiKeyHash: this.engineApiKeyHash,
+        serviceID: this.apolloConfig.graphId,
+        apiKeyHash: this.apolloConfig.keyHash,
       },
     };
 
@@ -833,7 +828,6 @@ export class ApolloServerBase {
       // We haven't configured this app to use Engine directly. But it looks like
       // we are a federated service backend, so we should be capable of including
       // our trace in a response extension if we are asked to by the gateway.
-      const { federatedPlugin } = require('apollo-engine-reporting');
       const rewriteError =
         engine && typeof engine === 'object' ? engine.rewriteError : undefined;
       pluginsToInit.push(federatedPlugin({ rewriteError }));
