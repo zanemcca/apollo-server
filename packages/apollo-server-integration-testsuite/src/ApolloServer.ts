@@ -233,6 +233,7 @@ export function testApolloServer<AS extends ApolloServerBase>(
 
           const { url: uri } = await createApolloServer({
             schema,
+            handleSignals: false,
           });
 
           const apolloFetch = createApolloFetch({ uri });
@@ -250,6 +251,7 @@ export function testApolloServer<AS extends ApolloServerBase>(
 
           const { url: uri } = await createApolloServer({
             schema,
+            handleSignals: false,
           });
 
           const apolloFetch = createApolloFetch({ uri });
@@ -272,6 +274,7 @@ export function testApolloServer<AS extends ApolloServerBase>(
           const { url: uri } = await createApolloServer({
             schema,
             introspection: true,
+            handleSignals: false,
           });
 
           const apolloFetch = createApolloFetch({ uri });
@@ -1009,6 +1012,7 @@ export function testApolloServer<AS extends ApolloServerBase>(
               },
               formatError,
               debug: true,
+              handleSignals: false,
             });
 
             const apolloFetch = createApolloFetch({ uri });
@@ -1078,6 +1082,7 @@ export function testApolloServer<AS extends ApolloServerBase>(
                 ...engineOptions,
               },
               debug: true,
+              handleSignals: false,
               ...constructorOptions,
             });
 
@@ -1682,6 +1687,7 @@ export function testApolloServer<AS extends ApolloServerBase>(
             const { url: uri } = await createApolloServer({
               typeDefs,
               resolvers,
+              handleSignals: false,
               context: () => {
                 throw new AuthenticationError('valid result');
               },
@@ -1743,6 +1749,7 @@ export function testApolloServer<AS extends ApolloServerBase>(
               },
             },
           },
+          handleSignals: false,
         });
 
         const apolloFetch = createApolloFetch({ uri });
@@ -1776,6 +1783,7 @@ export function testApolloServer<AS extends ApolloServerBase>(
               },
             },
           },
+          handleSignals: false,
         });
 
         const apolloFetch = createApolloFetch({ uri });

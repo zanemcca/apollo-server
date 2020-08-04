@@ -163,6 +163,14 @@ new ApolloServer({
   size of 30MiB, which is generally sufficient unless the server is processing
   a high number of unique operations.
 
+* `handleSignals`: `boolean`
+
+By default, ApolloServer listens for the `SIGINT` and `SIGTERM` signals and calls `await this.stop()` on
+itself when it is received, and then re-sends the signal to itself. Set this to false to disable
+this behavior. You can manually invoke `stop()` in other contexts if you'd like. Note that `stop()` does
+not run synchronously so it cannot work usefully in an `exit` handler.
+
+
 #### Returns
 
 `ApolloServer`
@@ -447,11 +455,8 @@ addMockFunctionsToSchema({
 
 *  `handleSignals`: boolean
 
-   By default, EngineReportingAgent listens for the 'SIGINT' and 'SIGTERM'
-   signals, stops, sends a final report, and re-sends the signal to
-   itself. Set this to false to disable. You can manually invoke 'stop()' and
-   'sendReport()' on other signals if you'd like. Note that 'sendReport()'
-   does not run synchronously so it cannot work usefully in an 'exit' handler.
+  For backwards compatibility only; specifying `new ApolloServer({engine: {handleSignals: false}})` is
+  equivalent to specifying `new ApolloServer({handleSignals: false})`.
 
 *  `rewriteError`: (err: GraphQLError) => GraphQLError | null
 
