@@ -412,10 +412,55 @@ const serviceHeaderDefaults = {
   uname: `${os.platform()}, ${os.type()}, ${os.release()}, ${os.arch()})`,
 };
 
+class TraceSeenMap {
+  readonly traceCaches: Map<number, InMemoryLRUCache<Boolean>> = new Map();
+  readonly maxTraceCaches: number = 3;
+
+  async seen(endTime: number, cacheKey: string): Promise<Boolean> {
+    return (await this.traceCaches.get(endTime)?.get(cacheKey)) || false;
+  }
+
+  async add(endTime: number, cacheKey: string) {
+    const traceCache = this.traceCaches.get(endTime);
+    if (traceCache) {
+      await traceCache.set(cacheKey, true);
+      return;
+    }
+
+    // If we already have max trace caches then drop the oldest one if the new
+    // trace will be in a more recent bucket.
+    const minEndTime = Math.min(...Array.from(this.traceCaches.keys()));
+    if (endTime > minEndTime && this.traceCaches.size >= this.maxTraceCaches) {
+      this.traceCaches.delete(minEndTime);
+    }
+
+    if (this.traceCaches.size < this.maxTraceCaches) {
+      const newTraceCache = new InMemoryLRUCache<Boolean>({
+        // 3MiB limit, very much approximately since we can't be sure how V8 might
+        // be storing these strings internally. Though this should be enough to
+        // store a fair amount of traces.
+
+        // A future version of this might expose some
+        // configuration option to grow the cache, but ideally, we could do that
+        // dynamically based on the resources available to the server, and not add
+        // more configuration surface area. Hopefully the warning message will allow
+        // us to evaluate the need with more validated input from those that receive
+        // it.
+        maxSize: Math.pow(2, 20) * 3,
+        sizeCalculator: (_, key) => {
+          return Buffer.byteLength(key, 'uft8');
+        },
+      });
+      this.traceCaches.set(endTime, newTraceCache);
+      await newTraceCache.set(cacheKey, true);
+      return;
+    }
+  }
+}
+
 class ReportData {
   report!: Report;
   size!: number;
-  traceCache: { [k: string]: Boolean } = Object.create(null);
   readonly header: ReportHeader;
   constructor(executableSchemaId: string, graphVariant: string) {
     this.header = new ReportHeader({
@@ -429,7 +474,6 @@ class ReportData {
   reset() {
     this.report = new Report({ header: this.header });
     this.size = 0;
-    this.traceCache = Object.create(null);
   }
 }
 
@@ -489,6 +533,7 @@ export class EngineReportingAgent<TContext = any> {
   };
 
   private readonly tracesEndpointUrl: string;
+  private readonly tracesSeenMap: TraceSeenMap;
   readonly schemaReport: boolean;
 
   public constructor(options: EngineReportingOptions<TContext> = {}) {
@@ -564,6 +609,7 @@ export class EngineReportingAgent<TContext = any> {
         this.options.reportIntervalMs || 10 * 1000,
       );
     }
+    this.tracesSeenMap = new TraceSeenMap();
 
     if (this.options.handleSignals !== false) {
       const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
@@ -670,17 +716,20 @@ export class EngineReportingAgent<TContext = any> {
       report.tracesPerQuery[statsReportKey].statsWithContext = new StatsMap();
     }
 
+    const endTime =
+      ((trace && trace.endTime && trace.endTime.seconds) || 0) % 60;
+
     const traceCacheKey = JSON.stringify({
       statsReportKey,
       statsBucket: DurationHistogram.durationToBucket(trace.durationNs),
-      endsAtMinute:
-        ((trace && trace.endTime && trace.endTime.seconds) || 0) % 60,
+      endsAtMinute: endTime,
     });
 
-    const convertTraceToStats = reportData.traceCache[traceCacheKey];
+    const convertTraceToStats = await this.tracesSeenMap.seen(endTime, traceCacheKey);
 
     if (convertTraceToStats) {
-      (report.tracesPerQuery[statsReportKey].statsWithContext as StatsMap).addTrace(trace);
+      (report.tracesPerQuery[statsReportKey]
+        .statsWithContext as StatsMap).addTrace(trace);
     } else {
       const protobufError = Trace.verify(trace);
       if (protobufError) {
@@ -695,7 +744,7 @@ export class EngineReportingAgent<TContext = any> {
       );
       reportData.size +=
         encodedTrace.length + Buffer.byteLength(statsReportKey);
-      reportData.traceCache[traceCacheKey] = true;
+      await this.tracesSeenMap.add(endTime, traceCacheKey);
     }
 
     // If the buffer gets big (according to our estimate), send.
