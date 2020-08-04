@@ -643,7 +643,7 @@ export class EngineReportingAgent<TContext = any> {
      * If there is no graphql document then it can't do any of the subsequent things.
      */
     if (!document) {
-      statsReportKey = `## GraphQLParseFailure`;
+      statsReportKey = `# GraphQLParseFailure\n`;
       if (
         this.options.sendOperationDocumentsOnUnexecutableOperation &&
         source
@@ -652,7 +652,7 @@ export class EngineReportingAgent<TContext = any> {
         trace.unexecutedOperationName = operationName;
       }
     } else if (graphqlValidationFailure) {
-      statsReportKey = `## GraphQLValidationFailure`;
+      statsReportKey = `# GraphQLValidationFailure\n`;
       if (
         this.options.sendOperationDocumentsOnUnexecutableOperation &&
         source
@@ -661,7 +661,7 @@ export class EngineReportingAgent<TContext = any> {
         trace.unexecutedOperationName = operationName;
       }
     } else if (graphqlUnknownOperationName) {
-      statsReportKey = `## GraphQLUnknownOperationName`;
+      statsReportKey = `# GraphQLUnknownOperationName\n`;
       if (
         this.options.sendOperationDocumentsOnUnexecutableOperation &&
         source
