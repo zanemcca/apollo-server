@@ -32,7 +32,7 @@ import { reportingLoop, SchemaReporter } from './schemaReporter';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import { DurationHistogram } from './durationHistogram';
-import { ContextualizedStats } from './contextualizedStats';
+import { ContextualizedStats, traceHasErrors } from "./contextualizedStats";
 
 let warnedOnDeprecatedApiKey = false;
 
@@ -719,10 +719,13 @@ export class EngineReportingAgent<TContext = any> {
     const endTime =
       ((trace && trace.endTime && trace.endTime.seconds) || 0) % 60;
 
+    // This is a potentially expensive operation to do on every trace.
+    const hasErrors = traceHasErrors(trace);
     const traceCacheKey = JSON.stringify({
       statsReportKey,
       statsBucket: DurationHistogram.durationToBucket(trace.durationNs),
       endsAtMinute: endTime,
+      errorKey: hasErrors ? endTime % 5 : ""
     });
 
     const convertTraceToStats = await this.tracesSeenMap.seen(endTime, traceCacheKey);

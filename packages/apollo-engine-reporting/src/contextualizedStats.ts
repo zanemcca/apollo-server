@@ -92,7 +92,7 @@ export class ContextualizedStats {
     const typeStats = this.perTypeStat;
     const rootPathErrorStats = queryLatencyStats.rootErrorStats;
 
-    function traceNodeStats(node: Trace.INode, path: ReadonlyArray<string>) {
+    function traceNodeStats(node: Trace.INode, path: ReadonlyArray<string>): boolean {
       // Generate error stats and error path information
       if (node.error && node.error.length > 0) {
         hasError = true;
@@ -148,6 +148,8 @@ export class ContextualizedStats {
           node.error && node.error.length > 0 ? 1 : 0;
         fieldStat.latencyCount.incrementDuration(node.endTime - node.startTime);
       }
+
+      return false;
     }
 
     iterateOverTraceForStats(trace, traceNodeStats);
@@ -161,11 +163,11 @@ export class ContextualizedStats {
  * Iterates over the entire trace and add the error to the errorPathStats object if there are errors
  * Also returns true if there are any errors found so we can increment errorsCount
  * @param trace Trace wer are iterating over
- * @param f function to be run on every node of the trace
+ * @param f function to be run on every node of the trace. If it returns true exit early
  */
 function iterateOverTraceForStats(
   trace: Trace,
-  f: (node: Trace.INode, path: ReadonlyArray<string>) => void,
+  f: (node: Trace.INode, path: ReadonlyArray<string>) => boolean,
 ): void {
   if (trace.root) {
     iterateOverTraceNode(trace.root, [], f);
@@ -178,7 +180,7 @@ function iterateOverTraceForStats(
 
 function iterateOverQueryPlan(
   node: Trace.IQueryPlanNode | null | undefined,
-  f: (node: Trace.INode, path: ReadonlyArray<string>) => void,
+  f: (node: Trace.INode, path: ReadonlyArray<string>) => boolean,
 ): void {
   if (!node) return;
 
@@ -209,8 +211,12 @@ function iterateOverQueryPlan(
 function iterateOverTraceNode(
   node: Trace.INode,
   path: ReadonlyArray<string>,
-  f: (node: Trace.INode, path: ReadonlyArray<string>) => void,
+  f: (node: Trace.INode, path: ReadonlyArray<string>) => boolean,
 ) {
+  // Exit early if the function returns true.
+  if (f(node, path)) {
+    return;
+  }
   if (node.child) {
     for (const child of node.child) {
       let childPath = path;
@@ -222,5 +228,19 @@ function iterateOverTraceNode(
       iterateOverTraceNode(child, childPath, f);
     }
   }
-  f(node, path);
+}
+
+
+export function traceHasErrors(trace: Trace): Boolean {
+  let hasErrors = false
+
+  function traceNodeStats(node: Trace.INode): boolean {
+    if (node.error && node.error.length > 0) {
+      hasErrors = true;
+    }
+    return hasErrors;
+  }
+
+  iterateOverTraceForStats(trace, traceNodeStats);
+  return hasErrors
 }
