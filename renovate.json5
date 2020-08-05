@@ -3,10 +3,11 @@
     "apollo-open-source"
   ],
   "automerge": false,
+  "baseBranches": ["main", "release-3.x"],
   "packageRules": [
     {
       "packageNames": ["@types/node"],
-      "allowedVersions": "8.x"
+      "allowedVersions": "12.x"
     },
     /*
       Avoid major version bumps to server frameworks (those used by the
@@ -24,6 +25,25 @@
       "packageNames": ["@hapi/hapi", "@types/hapi__hapi"],
       "allowedVersions": "<19"
     },
+    /*
+     * Apollo Server 3.x rules
+     *
+     * Essentially, we want to update Apollo whenever its possible!
+     *
+     */
+    {
+      "paths": [
+        "v3/package.json"
+      ],
+      "packageRules": [
+        "packagePatterns": ["^apollo-"],
+        "schedule": ["at any time"],
+        "automerge": true,
+        "automergeType": "branch",
+        "groupName": "v3"
+      ],
+    },
+
     /*
       Docs-related Renovate rules
 
