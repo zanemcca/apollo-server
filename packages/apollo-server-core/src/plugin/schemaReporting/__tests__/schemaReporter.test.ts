@@ -1,5 +1,9 @@
 import nock from 'nock';
-import { reportServerInfoGql, SchemaReporter } from '../schemaReporter';
+import {
+  reportServerInfoGql,
+  SchemaReporter,
+  ReportInfoNext,
+} from '../schemaReporter';
 
 function mockReporterRequest(url: any, variables?: any) {
   if (variables)
@@ -33,13 +37,18 @@ const serverInfo = {
 const url = 'http://localhost:4000';
 
 describe('Schema reporter', () => {
-  it('return correct values if no errors', async () => {
-    const schemaReporter = new SchemaReporter(
+  const newSchemaReporter = () =>
+    new SchemaReporter({
       serverInfo,
-      'schemaSdl',
-      'apiKey',
-      url,
-    );
+      schemaSdl: 'schemaSdl',
+      apiKey: 'apiKey',
+      endpointUrl: url,
+      logger: console,
+      initialReportingDelayInMs: 0,
+      fallbackReportingDelayInMs: 0,
+    });
+  it('return correct values if no errors', async () => {
+    const schemaReporter = newSchemaReporter();
     mockReporterRequest(url).reply(200, {
       data: {
         me: {
@@ -53,12 +62,11 @@ describe('Schema reporter', () => {
       },
     });
 
-    let {
-      inSeconds,
-      withExecutableSchema,
-    } = await schemaReporter.reportServerInfo(false);
-    expect(inSeconds).toBe(30);
-    expect(withExecutableSchema).toBe(false);
+    expect(await schemaReporter.reportServerInfo(false)).toEqual<ReportInfoNext>({
+      kind: 'next',
+      inSeconds: 30,
+      withExecutableSchema: false,
+    });
 
     mockReporterRequest(url).reply(200, {
       data: {
@@ -72,21 +80,16 @@ describe('Schema reporter', () => {
         },
       },
     });
-    ({
-      inSeconds,
-      withExecutableSchema,
-    } = await schemaReporter.reportServerInfo(false));
-    expect(inSeconds).toBe(60);
-    expect(withExecutableSchema).toBe(true);
+
+    expect(await schemaReporter.reportServerInfo(false)).toEqual<ReportInfoNext>({
+      kind: 'next',
+      inSeconds: 60,
+      withExecutableSchema: true,
+    });
   });
 
   it('throws on 500 response', async () => {
-    const schemaReporter = new SchemaReporter(
-      serverInfo,
-      'schemaSdl',
-      'apiKey',
-      url,
-    );
+    const schemaReporter = newSchemaReporter();
     mockReporterRequest(url).reply(500, {
       data: {
         me: {
@@ -107,12 +110,7 @@ describe('Schema reporter', () => {
   });
 
   it('throws on 200 malformed response', async () => {
-    const schemaReporter = new SchemaReporter(
-      serverInfo,
-      'schemaSdl',
-      'apiKey',
-      url,
-    );
+    const schemaReporter = newSchemaReporter();
     mockReporterRequest(url).reply(200, {
       data: {
         me: {
@@ -144,16 +142,11 @@ describe('Schema reporter', () => {
   });
 
   it('sends schema if withExecutableSchema is true.', async () => {
-    const schemaReporter = new SchemaReporter(
-      serverInfo,
-      'schemaSdl',
-      'apiKey',
-      url,
-    );
+    const schemaReporter = newSchemaReporter();
 
     const variables = {
       info: serverInfo,
-      executableSchema: 'schemaSdl'
+      executableSchema: 'schemaSdl',
     };
     mockReporterRequest(url, variables).reply(200, {
       data: {
