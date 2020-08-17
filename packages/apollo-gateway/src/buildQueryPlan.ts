@@ -118,6 +118,14 @@ function executionNodeForGroup(
   }: FetchGroup,
   parentType?: GraphQLCompositeType,
 ): PlanNode {
+  let typename = fields.find(field => field.fieldDef.name === '__typename');
+  if (!typename) {
+    typename = requiredFields.find(field => field.fieldDef.name === '__typename');
+    if (typename) {
+      fields.push(typename);
+    }
+  }
+
   const selectionSet = selectionSetFromFieldSet(fields, parentType);
   const requires =
     requiredFields.length > 0
